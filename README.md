@@ -2,6 +2,8 @@
 
 Bring the world's most impressive architectural marvel to your desk with this interactive 3D digital window. Using **Three.js** and **MediaPipe Face Mesh**, this project creates an immersive "anamorphic illusion" that tracks your head movement to provide a realistic perspective of the Las Vegas Sphere.
 
+**[🚀 Live Demo](https://live-las-vegas-sphere-at-home.vercel.app/)**
+
 ![Project Preview](img5.png)
 
 ## ✨ Key Features
