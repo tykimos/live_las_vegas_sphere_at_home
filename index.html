@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Digital Window</title>
+</head>
+
+<body>
+  <div id="loading-overlay"
+    style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s;">
+    <h1 style="font-family: monospace; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 20px;">Digital
+      Window</h1>
+    <p style="font-family: sans-serif; color: #888;">Initializing Neural Interface...</p>
+    <p style="font-family: sans-serif; color: #555; font-size: 0.8em; margin-top: 50px;">Please allow camera access for
+      head tracking.</p>
+  </div>
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
