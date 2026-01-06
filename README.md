@@ -2,7 +2,7 @@
 
 Bring the world's most impressive architectural marvel to your desk with this interactive 3D digital window. Using **Three.js** and **MediaPipe Face Mesh**, this project creates an immersive "anamorphic illusion" that tracks your head movement to provide a realistic perspective of the Las Vegas Sphere.
 
-![Project Preview](https://github.com/user-attachments/assets/demo_placeholder.png) *(Placeholder for your amazing demo screenshot)*
+![Project Preview](img5.png)
 
 ## ✨ Key Features
 
@@ -11,6 +11,14 @@ Bring the world's most impressive architectural marvel to your desk with this in
 -   **🎛️ Real-Time Calibration**: Built-in UI panel to fine-tune the 3D sphere's position, scale, and video mapping parameters (center and radius) to perfectly match your source video.
 -   **📐 Advanced Mapping**: Custom GLSL shader for precise spherical projection mapping of flat video sources.
 -   **🏎️ High Performance**: Optimized rendering with Three.js and efficient face tracking with MediaPipe.
+
+## 📸 Screenshots
+
+| 1. Click Connect | 2. Open YouTube | 3. Go Full Screen |
+| :---: | :---: | :---: |
+| ![Step 1](img1.png) | ![Step 2](img2.png) | ![Step 3](img3.png) |
+| **4. Source Ready** | **5. Calibrate** | **6. Final Result** |
+| ![Step 4](img4.png) | ![Step 5](img5.png) | ![Step 6](img6.png) |
 
 ## 🚀 Getting Started
 
@@ -44,12 +52,16 @@ Bring the world's most impressive architectural marvel to your desk with this in
 
 To get the full experience, follow these steps to connect the live stream:
 
-1.  Open the [Las Vegas Sphere Live Stream (YouTube)](https://www.youtube.com/watch?v=AnzVZRaujNA).
-2.  Set the YouTube video to **Full Screen** mode.
-3.  Back in this app, click the **"🔴 CONNECT LIVE SPHERE"** button.
+1.  Open the [Las Vegas Sphere Live Stream (YouTube)](https://www.youtube.com/watch?v=AnzVZRaujNA).  
+    ![YouTube Source](img2.png)
+2.  Set the YouTube video to **Full Screen** mode.  
+    ![Full Screen](img3.png)
+3.  Back in this app, click the **"🔴 CONNECT LIVE SPHERE"** button.  
+    ![Connect Button](img1.png)
 4.  Select the **"Window"** or **"Chrome Tab"** that is showing the full-screen YouTube video.
 5.  The stream will be projected onto the 3D sphere in the scene.
-6.  Use the **Calibration Panel** to align the content perfectly.
+6.  Use the **Calibration Panel** to align the content perfectly.  
+    ![Calibration](img5.png)
 
 ## 🛠️ Calibration Guide
 
