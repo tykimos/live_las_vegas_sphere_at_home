@@ -306,32 +306,18 @@ async function init() {
             applyAllParams();
           };
           
-          // Simplified frame buffer for low latency
-          const frameBuffer = [];
-          const maxBufferSize = 10; // Smaller buffer for lower latency
-          const minBufferSize = 3;  // Start playback quickly
-          let isPlaying = false;
-          let lastFrameTime = 0;
-          const targetFPS = 10; // Match server FPS
-          const frameInterval = 1000 / targetFPS;
-          let actualFPS = 0;
+          // Simple sequential frame display (no buffering to avoid frame order issues)
+          let pendingImageLoad = false;
+          let frameSequence = 0;
+          let displayedFrames = 0;
           let fpsFrameCount = 0;
           let fpsLastTime = performance.now();
-          let droppedFrames = 0;
-          let networkLatency = 0;
           
-          // Create buffer status indicator
+          // Create status indicator
           const createBufferIndicator = () => {
             const indicator = document.createElement('div');
             indicator.className = 'buffer-status';
             indicator.innerHTML = `
-              <div class="buffer-info">
-                <span class="buffer-label">Buffer</span>
-                <span class="buffer-value" id="buffer-count">0/${maxBufferSize}</span>
-              </div>
-              <div class="buffer-bar">
-                <div class="buffer-fill" id="buffer-fill" style="width: 0%"></div>
-              </div>
               <div class="fps-indicator">
                 <div class="stream-status">
                   <span class="stream-quality good" id="stream-dot"></span>
@@ -339,7 +325,7 @@ async function init() {
                 </div>
                 <span class="buffer-value" id="fps-value">0 FPS</span>
               </div>
-              <div class="latency-info" id="latency">Buffering...</div>
+              <div class="latency-info" id="latency">Connecting...</div>
             `;
             document.body.appendChild(indicator);
             return indicator;
@@ -347,88 +333,29 @@ async function init() {
           
           const bufferIndicator = createBufferIndicator();
           
-          // Update buffer indicator
-          const updateBufferIndicator = () => {
-            const bufferPercent = (frameBuffer.length / maxBufferSize) * 100;
-            document.getElementById('buffer-fill').style.width = `${bufferPercent}%`;
-            document.getElementById('buffer-count').textContent = `${frameBuffer.length}/${maxBufferSize}`;
-            
-            // Update status class
-            if (frameBuffer.length < 5) {
-              bufferIndicator.className = 'buffer-status error';
-              document.getElementById('stream-dot').className = 'stream-quality poor';
-            } else if (frameBuffer.length < minBufferSize) {
-              bufferIndicator.className = 'buffer-status warning';
-              document.getElementById('stream-dot').className = 'stream-quality medium';
-            } else {
-              bufferIndicator.className = 'buffer-status';
-              document.getElementById('stream-dot').className = 'stream-quality good';
-            }
-            
-            // Calculate and display FPS
+          // Update FPS indicator
+          const updateFPS = () => {
             const now = performance.now();
             fpsFrameCount++;
             if (now - fpsLastTime >= 1000) {
-              actualFPS = Math.round(fpsFrameCount * 1000 / (now - fpsLastTime));
-              document.getElementById('fps-value').textContent = `${actualFPS} FPS`;
+              const fps = Math.round(fpsFrameCount * 1000 / (now - fpsLastTime));
+              document.getElementById('fps-value').textContent = `${fps} FPS`;
+              document.getElementById('latency').textContent = `Frame #${displayedFrames}`;
               fpsFrameCount = 0;
               fpsLastTime = now;
             }
-            
-            // Update latency
-            if (isPlaying) {
-              const latencyMs = Math.round((frameBuffer.length / targetFPS) * 1000);
-              document.getElementById('latency').textContent = `Latency: ${latencyMs}ms`;
-            }
           };
           
-          // Smooth frame playback with double buffering
-          const playFrames = () => {
-            if (!isPlaying) {
-              requestAnimationFrame(playFrames);
-              return;
-            }
-            
-            // Pause if buffer is too low
-            if (frameBuffer.length < 2 && frameCount > 0) {
-              console.log('Buffer underrun, pausing...');
-              document.getElementById('latency').textContent = 'Buffering...';
-              isPlaying = false;
-              requestAnimationFrame(playFrames);
-              return;
-            }
-            
-            const currentTime = performance.now();
-            const elapsed = currentTime - lastFrameTime;
-            
-            if (elapsed >= frameInterval) {
-              // Get next frame from buffer
-              const frameData = frameBuffer.shift();
-              if (frameData) {
-                // Draw to back buffer
-                backCtx.drawImage(frameData, 0, 0, backCanvas.width, backCanvas.height);
-                
-                // Swap buffers
-                [activeCanvas, backCanvas] = [backCanvas, activeCanvas];
-                [activeCtx, backCtx] = [backCtx, activeCtx];
-                
-                // Update texture to use new active canvas
-                texture.image = activeCanvas;
-                texture.needsUpdate = true;
-                
-                frameCount++;
-                updateBufferIndicator();
-              } else {
-                droppedFrames++;
-              }
-              
-              lastFrameTime = currentTime - (elapsed % frameInterval);
-            }
-            
-            requestAnimationFrame(playFrames);
-          };
-          
+          // Sequential frame processing - process frames in order
           ws.onmessage = (event) => {
+            // Skip if previous frame is still loading
+            if (pendingImageLoad) {
+              return;
+            }
+            
+            pendingImageLoad = true;
+            const currentSequence = ++frameSequence;
+            
             // Convert ArrayBuffer to Blob
             const blob = new Blob([event.data], { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
@@ -436,39 +363,30 @@ async function init() {
             // Create image from blob
             const img = new Image();
             img.onload = () => {
-              // Add to buffer
-              if (frameBuffer.length < maxBufferSize) {
-                frameBuffer.push(img);
-              } else {
-                // Replace oldest frame if buffer is full
-                frameBuffer.shift();
-                frameBuffer.push(img);
-              }
+              // Draw to back buffer
+              backCtx.drawImage(img, 0, 0, backCanvas.width, backCanvas.height);
               
-              // Start playback when we have enough frames
-              if (!isPlaying && frameBuffer.length >= minBufferSize) {
-                isPlaying = true;
-                lastFrameTime = performance.now();
-                console.log("Starting buffered playback with", frameBuffer.length, "frames");
-                document.getElementById('latency').textContent = 'Playing...';
-              } else if (frameBuffer.length < 5 && isPlaying) {
-                // Resume playback if buffer recovers
-                if (frameBuffer.length >= minBufferSize) {
-                  isPlaying = true;
-                  console.log("Resuming playback");
-                }
-              }
+              // Swap buffers
+              [activeCanvas, backCanvas] = [backCanvas, activeCanvas];
+              [activeCtx, backCtx] = [backCtx, activeCtx];
               
-              updateBufferIndicator();
+              // Update texture
+              texture.image = activeCanvas;
+              texture.needsUpdate = true;
+              
+              displayedFrames++;
+              updateFPS();
               
               // Clean up
               URL.revokeObjectURL(url);
+              pendingImageLoad = false;
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(url);
+              pendingImageLoad = false;
             };
             img.src = url;
           };
-          
-          // Start the playback loop
-          playFrames();
           
           ws.onerror = (error) => {
             console.error("WebSocket error:", error);
