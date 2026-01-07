@@ -346,16 +346,40 @@ async function init() {
             }
           };
           
-          // Sequential frame processing - process frames in order
-          ws.onmessage = (event) => {
-            // Skip if previous frame is still loading
-            if (pendingImageLoad) {
-              return;
+          // Process next frame from queue
+          const processNextFrame = () => {
+            if (isProcessing || !currentFrame) return;
+            
+            isProcessing = true;
+            const frameToProcess = currentFrame;
+            currentFrame = null;
+            
+            // Draw to back buffer
+            backCtx.drawImage(frameToProcess.img, 0, 0, backCanvas.width, backCanvas.height);
+            
+            // Swap buffers
+            [activeCanvas, backCanvas] = [backCanvas, activeCanvas];
+            [activeCtx, backCtx] = [backCtx, activeCtx];
+            
+            // Update texture
+            texture.image = activeCanvas;
+            texture.needsUpdate = true;
+            
+            displayedFrames++;
+            updateFPS();
+            
+            // Clean up
+            URL.revokeObjectURL(frameToProcess.url);
+            isProcessing = false;
+            
+            // Process next frame if available
+            if (currentFrame) {
+              requestAnimationFrame(processNextFrame);
             }
-            
-            pendingImageLoad = true;
-            const currentSequence = ++frameSequence;
-            
+          };
+          
+          // Receive frames and queue them
+          ws.onmessage = (event) => {
             // Convert ArrayBuffer to Blob
             const blob = new Blob([event.data], { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
@@ -363,27 +387,21 @@ async function init() {
             // Create image from blob
             const img = new Image();
             img.onload = () => {
-              // Draw to back buffer
-              backCtx.drawImage(img, 0, 0, backCanvas.width, backCanvas.height);
+              // Clean up previous pending frame if exists
+              if (currentFrame) {
+                URL.revokeObjectURL(currentFrame.url);
+              }
               
-              // Swap buffers
-              [activeCanvas, backCanvas] = [backCanvas, activeCanvas];
-              [activeCtx, backCtx] = [backCtx, activeCtx];
+              // Store as current frame (always use latest)
+              currentFrame = { img, url };
               
-              // Update texture
-              texture.image = activeCanvas;
-              texture.needsUpdate = true;
-              
-              displayedFrames++;
-              updateFPS();
-              
-              // Clean up
-              URL.revokeObjectURL(url);
-              pendingImageLoad = false;
+              // Trigger processing
+              if (!isProcessing) {
+                processNextFrame();
+              }
             };
             img.onerror = () => {
               URL.revokeObjectURL(url);
-              pendingImageLoad = false;
             };
             img.src = url;
           };
