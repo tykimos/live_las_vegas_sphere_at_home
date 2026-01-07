@@ -405,7 +405,20 @@ async function init() {
         }
 
         // Priority 2: Vercel API - Search for YouTube live stream
+        // Only works on Vercel deployment, not local dev server
         btn.innerHTML = "⌛ SEARCHING YOUTUBE...";
+        
+        // Check if we're on localhost (Vite dev server doesn't support serverless functions)
+        const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        if (isLocalDev) {
+          // On local dev, guide user to use screen share or run vercel dev
+          btn.innerHTML = "📺 USE SCREEN SHARE";
+          btn.disabled = false;
+          alert("로컬 개발 환경에서는 API를 사용할 수 없습니다.\n\n옵션 1: 'node ws-streamer.cjs' 실행 후 다시 연결\n옵션 2: 아래 'screen share' 링크 클릭\n옵션 3: 'vercel dev' 명령으로 실행");
+          return;
+        }
+        
         const res = await fetch('/api');
         if (!res.ok) throw new Error(`Backend Error: ${res.status}`);
         const data = await res.json();
