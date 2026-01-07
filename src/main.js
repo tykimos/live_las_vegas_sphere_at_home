@@ -610,14 +610,22 @@ async function init() {
   createCalibrationUI();
   setupContentSource();
 
-  try {
-    await tracker.init(onEyePos);
+  // Remove loading overlay (whether camera succeeds or fails)
+  const removeOverlay = () => {
     const overlay = document.getElementById('loading-overlay');
     if (overlay) {
       overlay.style.opacity = '0';
       setTimeout(() => overlay.remove(), 500);
     }
-  } catch (e) { }
+  };
+
+  try {
+    await tracker.init(onEyePos);
+    removeOverlay();
+  } catch (e) {
+    console.log('Camera not available, continuing without head tracking');
+    removeOverlay();
+  }
 
   const animate = () => {
     requestAnimationFrame(animate);
