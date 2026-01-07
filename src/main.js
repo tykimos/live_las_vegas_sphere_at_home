@@ -144,33 +144,101 @@ async function init() {
   };
 
   const setupContentSource = () => {
-    // Container for buttons
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.bottom = '20px';
-    container.style.left = '50%';
-    container.style.transform = 'translateX(-50%)';
-    container.style.textAlign = 'center';
-    container.style.zIndex = '1000';
-    container.style.width = '100%';
-    document.body.appendChild(container);
-
-    const btn = document.createElement('button');
-    btn.innerHTML = "🔴 AUTO CONNECT LIVE (BETA)";
-    btn.className = "connect-btn";
-    // Reuse class but style might need adjustment if container is used
-    container.appendChild(btn);
-
-    // Manual Fallback
-    const manualLink = document.createElement('div');
-    manualLink.innerText = "or select manual screen share";
-    manualLink.style.marginTop = '10px';
-    manualLink.style.color = 'rgba(255,255,255,0.7)';
-    manualLink.style.fontSize = '12px';
-    manualLink.style.textDecoration = 'underline';
-    manualLink.style.cursor = 'pointer';
-    manualLink.style.fontFamily = 'monospace';
-    container.appendChild(manualLink);
+    // --- Logo Scroll Animation Setup ---
+    const logoCanvas = document.createElement('canvas');
+    const logoCtx = logoCanvas.getContext('2d', { alpha: false });
+    logoCanvas.width = 1280;
+    logoCanvas.height = 720;
+    
+    const logoTexture = new THREE.CanvasTexture(logoCanvas);
+    logoTexture.colorSpace = THREE.SRGBColorSpace;
+    logoTexture.minFilter = THREE.LinearFilter;
+    logoTexture.magFilter = THREE.LinearFilter;
+    
+    // Load logo images
+    const logoImages = [];
+    const logoUrls = ['/img1.png', '/img2.png', '/img3.png'];
+    let logosLoaded = 0;
+    let logoScrollX = 0;
+    let logoAnimationId = null;
+    let isLogoAnimating = true;
+    
+    const loadLogos = () => {
+      return new Promise((resolve) => {
+        logoUrls.forEach((url, index) => {
+          const img = new Image();
+          img.onload = () => {
+            logoImages[index] = img;
+            logosLoaded++;
+            if (logosLoaded === logoUrls.length) {
+              resolve();
+            }
+          };
+          img.onerror = () => {
+            console.warn(`Failed to load ${url}`);
+            logosLoaded++;
+            if (logosLoaded === logoUrls.length) {
+              resolve();
+            }
+          };
+          img.src = url;
+        });
+      });
+    };
+    
+    // Animate scrolling logos
+    const animateLogos = () => {
+      if (!isLogoAnimating) return;
+      
+      // Clear canvas with dark background
+      logoCtx.fillStyle = '#000000';
+      logoCtx.fillRect(0, 0, logoCanvas.width, logoCanvas.height);
+      
+      if (logoImages.length > 0) {
+        const targetHeight = logoCanvas.height * 0.5; // 50% of canvas height
+        const padding = 50; // Space between logos
+        
+        // Calculate scaled dimensions for each logo (same height, proportional width)
+        const scaledLogos = logoImages.filter(img => img).map(img => {
+          const scale = targetHeight / img.height;
+          return {
+            img,
+            width: img.width * scale,
+            height: targetHeight
+          };
+        });
+        
+        // Calculate total width of all logos with padding
+        const totalWidth = scaledLogos.reduce((sum, logo) => sum + logo.width + padding, 0);
+        
+        // Draw logos in a repeating pattern
+        const yPos = (logoCanvas.height - targetHeight) / 2;
+        let xPos = -logoScrollX % totalWidth;
+        
+        // Draw enough copies to fill the screen and then some
+        for (let repeat = 0; repeat < 3; repeat++) {
+          scaledLogos.forEach(logo => {
+            logoCtx.drawImage(logo.img, xPos, yPos, logo.width, logo.height);
+            xPos += logo.width + padding;
+          });
+        }
+        
+        // Scroll speed
+        logoScrollX += 2;
+      }
+      
+      logoTexture.needsUpdate = true;
+      logoAnimationId = requestAnimationFrame(animateLogos);
+    };
+    
+    // Start logo animation immediately
+    loadLogos().then(() => {
+      // Set logo texture as initial display
+      sphereMesh.material.uniforms.tVideo.value = logoTexture;
+      params.useVideo = 1.0;
+      applyAllParams();
+      animateLogos();
+    });
 
     const startVideo = (video) => {
       const texture = new THREE.VideoTexture(video);
@@ -178,15 +246,19 @@ async function init() {
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
 
+      // Stop logo animation
+      isLogoAnimating = false;
+      if (logoAnimationId) {
+        cancelAnimationFrame(logoAnimationId);
+      }
+
       sphereMesh.material.uniforms.tVideo.value = texture;
       params.useVideo = 1.0;
       applyAllParams();
-      container.style.display = 'none';
     };
 
-    btn.onclick = async () => {
-      btn.innerHTML = "⌛ CONNECTING TO BACKEND...";
-      btn.disabled = true;
+    // Auto-connect immediately
+    const autoConnect = async () => {
 
       try {
         // Priority 1: Local MJPEG Streamer (Best for local dev / mac capture)
@@ -198,33 +270,46 @@ async function init() {
           const ws = new WebSocket('ws://localhost:8080');
           let frameCount = 0;
           
-          // Create canvas for frame rendering (matching server size)
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d', { alpha: false });
-          canvas.width = 640;
-          canvas.height = 360;
+          // Double buffering - two canvases to prevent flickering
+          const canvas1 = document.createElement('canvas');
+          const canvas2 = document.createElement('canvas');
+          const ctx1 = canvas1.getContext('2d', { alpha: false });
+          const ctx2 = canvas2.getContext('2d', { alpha: false });
+          canvas1.width = canvas2.width = 1280;
+          canvas1.height = canvas2.height = 720;
           
-          // Create texture from canvas
-          const texture = new THREE.CanvasTexture(canvas);
+          let activeCanvas = canvas1;
+          let backCanvas = canvas2;
+          let activeCtx = ctx1;
+          let backCtx = ctx2;
+          
+          // Create texture from active canvas
+          const texture = new THREE.CanvasTexture(activeCanvas);
           texture.colorSpace = THREE.SRGBColorSpace;
           texture.minFilter = THREE.LinearFilter;
           texture.magFilter = THREE.LinearFilter;
+          
+          // Current frame ready to display
+          let pendingFrame = null;
           
           ws.binaryType = 'arraybuffer';
           
           ws.onopen = () => {
             console.log("WebSocket stream connected");
+            // Stop logo animation
+            isLogoAnimating = false;
+            if (logoAnimationId) {
+              cancelAnimationFrame(logoAnimationId);
+            }
             sphereMesh.material.uniforms.tVideo.value = texture;
             params.useVideo = 1.0;
             applyAllParams();
-            container.style.display = 'none';
-            btn.innerHTML = "✅ LIVE STREAMING";
           };
           
-          // Enhanced frame buffer for smooth playback
+          // Simplified frame buffer for low latency
           const frameBuffer = [];
-          const maxBufferSize = 50; // Much larger buffer for smoother playback
-          const minBufferSize = 25; // Start playback when we have half the buffer full
+          const maxBufferSize = 10; // Smaller buffer for lower latency
+          const minBufferSize = 3;  // Start playback quickly
           let isPlaying = false;
           let lastFrameTime = 0;
           const targetFPS = 10; // Match server FPS
@@ -297,7 +382,7 @@ async function init() {
             }
           };
           
-          // Smooth frame playback with adaptive timing
+          // Smooth frame playback with double buffering
           const playFrames = () => {
             if (!isPlaying) {
               requestAnimationFrame(playFrames);
@@ -305,7 +390,7 @@ async function init() {
             }
             
             // Pause if buffer is too low
-            if (frameBuffer.length < 5 && frameCount > 0) {
+            if (frameBuffer.length < 2 && frameCount > 0) {
               console.log('Buffer underrun, pausing...');
               document.getElementById('latency').textContent = 'Buffering...';
               isPlaying = false;
@@ -320,8 +405,17 @@ async function init() {
               // Get next frame from buffer
               const frameData = frameBuffer.shift();
               if (frameData) {
-                ctx.drawImage(frameData, 0, 0, canvas.width, canvas.height);
+                // Draw to back buffer
+                backCtx.drawImage(frameData, 0, 0, backCanvas.width, backCanvas.height);
+                
+                // Swap buffers
+                [activeCanvas, backCanvas] = [backCanvas, activeCanvas];
+                [activeCtx, backCtx] = [backCtx, activeCtx];
+                
+                // Update texture to use new active canvas
+                texture.image = activeCanvas;
                 texture.needsUpdate = true;
+                
                 frameCount++;
                 updateBufferIndicator();
               } else {
@@ -378,15 +472,14 @@ async function init() {
           
           ws.onerror = (error) => {
             console.error("WebSocket error:", error);
-            btn.innerHTML = "❌ STREAM ERROR";
-            btn.disabled = false;
           };
           
           ws.onclose = () => {
             console.log("WebSocket disconnected");
-            params.useVideo = 0.0;
-            applyAllParams();
-            container.style.display = 'block';
+            // Restart logo animation
+            isLogoAnimating = true;
+            sphereMesh.material.uniforms.tVideo.value = logoTexture;
+            animateLogos();
             if (bufferIndicator) {
               bufferIndicator.remove();
             }
@@ -406,16 +499,14 @@ async function init() {
 
         // Priority 2: Vercel API - Search for YouTube live stream
         // Only works on Vercel deployment, not local dev server
-        btn.innerHTML = "⌛ SEARCHING YOUTUBE...";
+        console.log("Searching YouTube...");
         
         // Check if we're on localhost (Vite dev server doesn't support serverless functions)
         const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         
         if (isLocalDev) {
-          // On local dev, guide user to use screen share or run vercel dev
-          btn.innerHTML = "📺 USE SCREEN SHARE";
-          btn.disabled = false;
-          alert("로컬 개발 환경에서는 API를 사용할 수 없습니다.\n\n옵션 1: 'node ws-streamer.cjs' 실행 후 다시 연결\n옵션 2: 아래 'screen share' 링크 클릭\n옵션 3: 'vercel dev' 명령으로 실행");
+          // On local dev, just keep showing logo animation
+          console.log("로컬 개발 환경 - WebSocket 스트리머를 실행하세요: node ws-streamer.cjs");
           return;
         }
         
@@ -474,34 +565,27 @@ async function init() {
           
           document.getElementById('close-info-panel').onclick = async () => {
             infoPanel.remove();
-            manualLink.click(); // Trigger screen share
+            manualScreenShare(); // Trigger screen share
           };
-          
-          btn.innerHTML = "🔴 STREAM FOUND";
-          btn.disabled = false;
 
         } else {
           console.error(data.error);
-          alert("Could not find a live stream automatically.\nBackend: " + (data.error || "Unknown"));
-          btn.innerHTML = "🔴 TRY AGAIN";
-          btn.disabled = false;
+          console.log("Could not find a live stream automatically.");
         }
       } catch (err) {
-        console.error(err);
-        alert("Connection error: " + err.message);
-        btn.innerHTML = "🔴 RETRY";
-        btn.disabled = false;
+        console.error("Connection error:", err);
       }
     };
 
-    manualLink.onclick = async () => {
+    // Manual screen share function
+    const manualScreenShare = async () => {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: { frameRate: { ideal: 30 } }
         });
         const video = document.createElement('video');
         video.srcObject = stream;
-        video.muted = true; // Chrome blocks autoplay with sound usually
+        video.muted = true;
         video.play();
 
         video.onloadedmetadata = () => {
@@ -509,14 +593,18 @@ async function init() {
         };
 
         stream.getVideoTracks()[0].onended = () => {
-          params.useVideo = 0.0;
-          applyAllParams();
-          container.style.display = 'block';
+          // Restart logo animation when screen share ends
+          isLogoAnimating = true;
+          sphereMesh.material.uniforms.tVideo.value = logoTexture;
+          animateLogos();
         };
       } catch (e) {
         console.warn(e);
       }
     };
+
+    // Start auto-connect immediately
+    autoConnect();
   };
 
   createCalibrationUI();
