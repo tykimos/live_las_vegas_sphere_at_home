@@ -306,9 +306,9 @@ async function init() {
             applyAllParams();
           };
           
-          // Simple sequential frame display (no buffering to avoid frame order issues)
-          let pendingImageLoad = false;
-          let frameSequence = 0;
+          // Sequential frame display with latest frame replacement
+          let currentFrame = null;      // Latest received frame (waiting to be displayed)
+          let isProcessing = false;     // Is currently drawing to canvas
           let displayedFrames = 0;
           let fpsFrameCount = 0;
           let fpsLastTime = performance.now();
