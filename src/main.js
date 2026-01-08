@@ -306,12 +306,13 @@ async function init() {
             applyAllParams();
           };
           
-          // Sequential frame display with latest frame replacement
-          let currentFrame = null;      // Latest received frame (waiting to be displayed)
-          let isProcessing = false;     // Is currently drawing to canvas
+          // Strict sequential frame processing with sequence numbers
+          let receivedSequence = 0;     // Counter for received frames
+          let displayedSequence = 0;    // Last displayed sequence number
           let displayedFrames = 0;
           let fpsFrameCount = 0;
           let fpsLastTime = performance.now();
+          let isLoadingFrame = false;   // Only load one frame at a time
           
           // Create status indicator
           const createBufferIndicator = () => {
@@ -346,16 +347,10 @@ async function init() {
             }
           };
           
-          // Process next frame from queue
-          const processNextFrame = () => {
-            if (isProcessing || !currentFrame) return;
-            
-            isProcessing = true;
-            const frameToProcess = currentFrame;
-            currentFrame = null;
-            
+          // Display frame directly (no buffering, strict sequential)
+          const displayFrame = (img) => {
             // Draw to back buffer
-            backCtx.drawImage(frameToProcess.img, 0, 0, backCanvas.width, backCanvas.height);
+            backCtx.drawImage(img, 0, 0, backCanvas.width, backCanvas.height);
             
             // Swap buffers
             [activeCanvas, backCanvas] = [backCanvas, activeCanvas];
@@ -367,19 +362,18 @@ async function init() {
             
             displayedFrames++;
             updateFPS();
-            
-            // Clean up
-            URL.revokeObjectURL(frameToProcess.url);
-            isProcessing = false;
-            
-            // Process next frame if available
-            if (currentFrame) {
-              requestAnimationFrame(processNextFrame);
-            }
           };
           
-          // Receive frames and queue them
+          // Receive frames - process one at a time in strict order
           ws.onmessage = (event) => {
+            // Skip if we're still loading previous frame
+            if (isLoadingFrame) {
+              return;
+            }
+            
+            isLoadingFrame = true;
+            const frameSeq = ++receivedSequence;
+            
             // Convert ArrayBuffer to Blob
             const blob = new Blob([event.data], { type: 'image/jpeg' });
             const url = URL.createObjectURL(blob);
@@ -387,21 +381,17 @@ async function init() {
             // Create image from blob
             const img = new Image();
             img.onload = () => {
-              // Clean up previous pending frame if exists
-              if (currentFrame) {
-                URL.revokeObjectURL(currentFrame.url);
+              // Only display if this is the next expected frame
+              if (frameSeq > displayedSequence) {
+                displayFrame(img);
+                displayedSequence = frameSeq;
               }
-              
-              // Store as current frame (always use latest)
-              currentFrame = { img, url };
-              
-              // Trigger processing
-              if (!isProcessing) {
-                processNextFrame();
-              }
+              URL.revokeObjectURL(url);
+              isLoadingFrame = false;
             };
             img.onerror = () => {
               URL.revokeObjectURL(url);
+              isLoadingFrame = false;
             };
             img.src = url;
           };
